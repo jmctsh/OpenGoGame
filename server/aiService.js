@@ -35,11 +35,12 @@ const REASONING_EFFORT = process.env.REASONING_EFFORT || 'minimal';
 function boardToTextDescription(engineState) {
   const { board, currentPlayer, moveHistory, size } = engineState;
   const last10Moves = moveHistory.slice(-10);
+  const lastMove = moveHistory.length > 0 ? moveHistory[moveHistory.length - 1] : null;
 
   let desc = `当前围棋棋盘状态（${size}路）：\n\n`;
 
   const colLabels = 'ABCDEFGHJKLMNOPQRST';
-  desc += '   ' + colLabels.split('').join(' ') + '\n';
+  desc += '    ' + colLabels.split('').map(label => label.padStart(3, ' ')).join('') + '\n';
 
   for (let y = 0; y < size; y++) {
     const rowNum = (size - y).toString().padStart(2, ' ');
@@ -52,20 +53,27 @@ function boardToTextDescription(engineState) {
 
       const lastMoveIdx = last10Moves.findIndex(m => m.x === x && m.y === y);
       if (lastMoveIdx !== -1) {
-        const num = last10Moves.length - lastMoveIdx;
-        ch = stone === 1 ? `B${num % 10}` : `W${num % 10}`;
+        const num = lastMoveIdx + 1;
+        ch = stone === 1 ? `B${num}` : `W${num}`;
       }
-      desc += ch + ' ';
+      desc += ch.padStart(3, ' ');
     }
     desc += '\n';
   }
 
-  desc += `\n当前轮: ${currentPlayer === 1 ? '黑方(B)' : '白方(W)'}`;
+  desc += `\n当前局面: ${currentPlayer === 1 ? '现在轮到黑方(B)落子' : '现在轮到白方(W)落子'}`;
+  if (lastMove) {
+    const lastPos = colLabels[lastMove.x] + (size - lastMove.y);
+    const lastColor = lastMove.player === 1 ? '黑方(B)' : '白方(W)';
+    desc += `\n上一手: ${lastColor} 下在 ${lastPos}`;
+  } else {
+    desc += '\n上一手: 暂无，当前是空棋盘';
+  }
   desc += `\n总手数: ${moveHistory.length}`;
 
   if (last10Moves.length > 0) {
-    desc += '\n\n最近10步(标有数字，1是最新的子):';
-    last10Moves.slice().reverse().forEach((m, i) => {
+    desc += '\n\n最近10步(编号按时间顺序递增，数字越大越新，最大数字代表最新一手):';
+    last10Moves.forEach((m, i) => {
       const pos = colLabels[m.x] + (size - m.y);
       const color = m.player === 1 ? '黑' : '白';
       desc += `\n  ${i + 1}. ${color}${pos}`;
@@ -100,16 +108,28 @@ ${boardDesc}
 1. 推荐下法给1-2个即可，每个理由一句话说清
 2. 反模式给1-2个即可，理由一句话
 3. 坐标使用列字母(A-T跳过I)+行数字(1-19)格式，如左上角A19，右下角T1
-4. B=黑，W=白，B1/W1是最新子，数字越大越旧
-5. 棋盘空时建议先占角、守角、挂角
-6. 整体回复要简短，总字数控制在200字以内，快速给出关键建议
-7. 一定要用JSON格式，不要有额外说明`;
+4. B=黑，W=白；棋盘上的最近10子按时间顺序编号，数字越大越新，最大数字代表最新一手
+5. “当前局面”里已经明确写了现在轮到哪一方落子；你的 recommendations 和 antiPatterns 都必须站在当前落子方视角来分析
+6. 如果局面里写了“上一手”，请结合上一手与当前轮到的一方判断攻防，不要把上一手一方误认为当前行棋方
+7. 棋盘空时建议先占角、守角、挂角
+8. 整体回复要简短，总字数控制在200字以内，快速给出关键建议
+9. 一定要用JSON格式，不要有额外说明`;
 }
 
-function buildImagePrompt() {
+function buildImagePrompt(engineState) {
+  const currentPlayerText = engineState.currentPlayer === 1 ? '黑方(B)' : '白方(W)';
+  const lastMove = engineState.moveHistory.length > 0 ? engineState.moveHistory[engineState.moveHistory.length - 1] : null;
+  const colLabels = 'ABCDEFGHJKLMNOPQRST';
+  const lastMoveText = lastMove
+    ? `${lastMove.player === 1 ? '黑方(B)' : '白方(W)'} 下在 ${colLabels[lastMove.x]}${engineState.size - lastMove.y}`
+    : '暂无，当前是空棋盘';
+
   return `你是一位经验丰富的围棋老师，正在给新手做实时对局指导。回复务必简短精炼。
 
-上面是当前围棋棋盘（19路）。标有数字的棋子是最近下的，数字1是最新一手。
+上面是当前围棋棋盘（${engineState.size}路）。
+当前局面：现在轮到${currentPlayerText}落子。
+上一手：${lastMoveText}。
+标有数字的棋子是最近下的，数字越大越新，最大数字代表最新一手；如果不足10手，则当前最大数字就是最新一手。
 
 请用中文回复，面向围棋新手，语言通俗易懂。每个字段尽量简短，不要长篇大论。请严格按照以下JSON格式返回（不要返回其他内容，直接返回JSON）：
 
@@ -129,10 +149,11 @@ function buildImagePrompt() {
 1. 推荐下法给1-2个即可，每个理由一句话说清
 2. 反模式给1-2个即可，理由一句话
 3. 坐标使用列字母(A-T跳过I)+行数字(1-19)格式，如左上角A19，右下角T1
-4. 数字1是最新落子，数字越大越旧
-5. 棋盘空时建议先占角、守角、挂角
-6. 整体回复要简短，总字数控制在200字以内，快速给出关键建议
-7. 一定要用JSON格式，不要有额外说明`;
+4. 棋盘上的最近10子按时间顺序编号，数字越大越新，最大数字代表最新一手
+5. recommendations 和 antiPatterns 都必须站在当前落子方视角来分析，不要把上一手一方误认为当前行棋方
+6. 棋盘空时建议先占角、守角、挂角
+7. 整体回复要简短，总字数控制在200字以内，快速给出关键建议
+8. 一定要用JSON格式，不要有额外说明`;
 }
 
 async function callDoubao(engineState, imageBase64 = null) {
@@ -153,7 +174,7 @@ async function callDoubao(engineState, imageBase64 = null) {
       },
       {
         type: 'text',
-        text: buildImagePrompt()
+        text: buildImagePrompt(engineState)
       }
     ];
   } else {

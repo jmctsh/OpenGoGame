@@ -99,7 +99,7 @@ const GoBoard = forwardRef(function GoBoard({ gameState, onPlaceStone, onContext
     const last10Moves = moveHistory.slice(-10);
     const lastMoveMap = new Map();
     last10Moves.forEach((move, idx) => {
-      lastMoveMap.set(`${move.x},${move.y}`, last10Moves.length - idx);
+      lastMoveMap.set(`${move.x},${move.y}`, idx + 1);
     });
 
     if (aiSuggestions && aiSuggestions.recommendations) {
@@ -286,7 +286,7 @@ function generateAIBoardImage(gameState) {
   const last10Moves = moveHistory.slice(-10);
   const lastMoveMap = new Map();
   last10Moves.forEach((move, idx) => {
-    lastMoveMap.set(`${move.x},${move.y}`, last10Moves.length - idx);
+    lastMoveMap.set(`${move.x},${move.y}`, idx + 1);
   });
 
   for (let y = 0; y < BOARD_SIZE; y++) {
